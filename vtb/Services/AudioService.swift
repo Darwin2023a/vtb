@@ -129,23 +129,30 @@ class AudioService: NSObject, ObservableObject {
             throw AudioError.permissionDenied
         }
         
-        try await setupAudioSession()
+        setupAudioSession()
         
         let audioFilename = getDocumentsDirectory().appendingPathComponent("\(Date().timeIntervalSince1970).m4a")
         
-        let settings = [
+        let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
             AVSampleRateKey: 44100,
             AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+            AVEncoderBitRateKey: 128000,  // 增加比特率
+            AVEncoderBitDepthHintKey: 16,  // 设置位深度
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false
         ]
         
         do {
             audioRecorder = try AVAudioRecorder(url: audioFilename, settings: settings)
             audioRecorder?.delegate = self
+            audioRecorder?.isMeteringEnabled = true  // 启用音量计量
             audioRecorder?.record()
-            isRecording = true
-            startTimer()
+            await MainActor.run {
+                isRecording = true
+                startTimer()
+            }
         } catch {
             print("录音启动失败: \(error)")
             throw AudioError.recordingError
@@ -156,27 +163,27 @@ class AudioService: NSObject, ObservableObject {
         guard isRecording else { return }
         
         audioRecorder?.stop()
-        isRecording = false
-        
-        // 保存录音信息
-        if let url = audioRecorder?.url {
-            let recording = Recording(
-                id: UUID(),
-                audioURL: url,
-                transcription: transcription,
-                enhancedText: enhancedText,
-                tags: tags,
-                createdAt: Date()
-            )
-            saveRecording(recording)
+        Task { @MainActor in
+            isRecording = false
             
-            // 清空当前状态
-            transcription = ""
-            enhancedText = ""
-            tags = []
-            
-            // 开始转写
-            Task {
+            // 保存录音信息
+            if let url = audioRecorder?.url {
+                let recording = Recording(
+                    id: UUID(),
+                    audioURL: url,
+                    transcription: transcription,
+                    enhancedText: enhancedText,
+                    tags: tags,
+                    createdAt: Date()
+                )
+                saveRecording(recording)
+                
+                // 清空当前状态
+                transcription = ""
+                enhancedText = ""
+                tags = []
+                
+                // 开始转写
                 await transcribeAudio(url: url)
             }
         }
@@ -196,43 +203,56 @@ class AudioService: NSObject, ObservableObject {
                 stopPlayback()
             }
             
+            // 设置音频会话
+            try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try AVAudioSession.sharedInstance().setActive(true)
+            
             // 创建新的播放器
             audioPlayer = try AVAudioPlayer(contentsOf: url)
             audioPlayer?.delegate = self
             audioPlayer?.prepareToPlay()
             
-            // 设置音频会话
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
+            // 设置播放器音量
+            audioPlayer?.volume = 1.0
             
             // 开始播放
             audioPlayer?.play()
-            isPlaying = true
-            isPaused = false
-            currentPlayingURL = url
+            Task { @MainActor in
+                isPlaying = true
+                isPaused = false
+                currentPlayingURL = url
+            }
         } catch {
             print("播放失败: \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
-            stopPlayback()
+            Task { @MainActor in
+                errorMessage = error.localizedDescription
+                stopPlayback()
+            }
         }
     }
     
     func pausePlayback() {
         audioPlayer?.pause()
-        isPaused = true
+        Task { @MainActor in
+            isPaused = true
+        }
     }
     
     func resumePlayback() {
         audioPlayer?.play()
-        isPaused = false
+        Task { @MainActor in
+            isPaused = false
+        }
     }
     
     func stopPlayback() {
         audioPlayer?.stop()
         audioPlayer?.currentTime = 0
-        isPlaying = false
-        isPaused = false
-        currentPlayingURL = nil
+        Task { @MainActor in
+            isPlaying = false
+            isPaused = false
+            currentPlayingURL = nil
+        }
         
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -286,8 +306,10 @@ class AudioService: NSObject, ObservableObject {
     func enhanceText(model: TextEnhancementService.Model = .qwen) async throws -> String {
         guard !transcription.isEmpty else { return "" }
         
-        isEnhancing = true
-        errorMessage = nil
+        await MainActor.run {
+            isEnhancing = true
+            errorMessage = nil
+        }
         
         do {
             let result = try await textEnhancementService.enhanceText(transcription, model: model)
@@ -335,7 +357,7 @@ class AudioService: NSObject, ObservableObject {
     private func setupAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .default)
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
             try session.setActive(true)
             audioSessionConfigured = true
         } catch {
