@@ -2,13 +2,17 @@ import SwiftUI
 import AVFoundation
 
 struct RecordingRow: View {
-    let recording: Recording
+    @Binding var recording: Recording
     @ObservedObject var audioService: AudioService
     @State private var isExpanded = false
     @State private var isSending = false
     @State private var showingError = false
     @State private var errorMessage: String?
     @State private var showingSuccess = false
+    @State private var isEditingName = false
+    @State private var editedName: String = ""
+    @State private var isPlaying = false
+    @State private var isPaused = false
     
     private var isPlayingThisRecording: Bool {
         audioService.isPlaying && audioService.currentPlayingURL == recording.audioURL
@@ -22,31 +26,75 @@ struct RecordingRow: View {
         VStack(alignment: .leading, spacing: 12) {
             // 基本信息行
             HStack {
-                VStack(alignment: .leading) {
-                    Text(recording.createdAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.headline)
-                    Text(recording.audioURL.lastPathComponent)
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                }
+                // 时间显示
+                Text(recording.formattedDate)
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
                 
                 Spacer()
-            }
-            
-            // 展开/收起按钮
-            Button(action: {
-                withAnimation {
-                    isExpanded.toggle()
+                
+                // 文件名
+                if isEditingName {
+                    HStack {
+                        TextField("输入文件名", text: $editedName)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .frame(width: 200)
+                            .onAppear {
+                                // 如果是默认的时间格式名称，则清空
+                                if recording.name.hasPrefix("录音 ") {
+                                    editedName = ""
+                                } else {
+                                    editedName = recording.name
+                                }
+                            }
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        
+                        // 确认按钮
+                        Button(action: {
+                            updateRecordingName()
+                        }) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.blue)
+                        }
+                        
+                        // 取消按钮
+                        Button(action: {
+                            isEditingName = false
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.red)
+                        }
+                    }
+                } else {
+                    Text(recording.name)
+                        .font(.headline)
+                        .lineLimit(1)
+                    
+                    // 编辑按钮
+                    Button(action: {
+                        isEditingName = true
+                    }) {
+                        Image(systemName: "pencil.circle.fill")
+                            .foregroundColor(.blue)
+                    }
                 }
-            }) {
-                HStack {
-                    Text(isExpanded ? "收起详情" : "查看详情")
-                        .foregroundColor(.blue)
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundColor(.blue)
+                
+                // 展开/收起按钮
+                Button(action: {
+                    withAnimation {
+                        isExpanded.toggle()
+                    }
+                }) {
+                    HStack {
+                        Text(isExpanded ? "收起详情" : "查看详情")
+                            .foregroundColor(.blue)
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .foregroundColor(.blue)
+                    }
                 }
+                .buttonStyle(PlainButtonStyle())
             }
-            .buttonStyle(PlainButtonStyle())
             
             // 展开后的详细信息
             if isExpanded {
@@ -213,6 +261,14 @@ struct RecordingRow: View {
         } message: {
             Text("发送成功！")
         }
+    }
+    
+    private func updateRecordingName() {
+        if !editedName.isEmpty && editedName != recording.name {
+            audioService.updateRecordingName(recording, newName: editedName)
+            recording.name = editedName
+        }
+        isEditingName = false
     }
     
     private func sendToFlomo() async {

@@ -63,7 +63,12 @@ class AudioService: NSObject, ObservableObject {
         self.textEnhancementService = TextEnhancementService(apiKey: apiKey)
         super.init()
         setupAudioSession()
-        loadRecordings()
+        
+        // 确保在主线程上加载录音
+        Task { @MainActor in
+            self.recordings = getRecordings()
+        }
+        
         // 先检查麦克风权限
         Task {
             await checkMicrophonePermission()
@@ -192,7 +197,15 @@ class AudioService: NSObject, ObservableObject {
     private func saveRecording(_ recording: Recording) {
         var recordings = getRecordings()
         recordings.insert(recording, at: 0)
-        UserDefaults.standard.set(recordings.map { $0.toDictionary() }, forKey: "recordings")
+        if let encoded = try? JSONEncoder().encode(recordings) {
+            UserDefaults.standard.set(encoded, forKey: "recordings")
+            UserDefaults.standard.synchronize()
+            
+            // 立即更新 recordings 数组
+            Task { @MainActor in
+                self.recordings = recordings
+            }
+        }
     }
     
     // MARK: - 播放功能
@@ -274,7 +287,7 @@ class AudioService: NSObject, ObservableObject {
     }
     
     // MARK: - 转写功能
-    private func transcribeAudio(url: URL) async {
+    func transcribeAudio(url: URL) async {
         await MainActor.run {
             isTranscribing = true
             errorMessage = nil
@@ -339,7 +352,15 @@ class AudioService: NSObject, ObservableObject {
                     firstRecording.enhancedText = self.enhancedText
                     firstRecording.tags = self.tags
                     recordings[0] = firstRecording
-                    UserDefaults.standard.set(recordings.map { $0.toDictionary() }, forKey: "recordings")
+                    if let encoded = try? JSONEncoder().encode(recordings) {
+                        UserDefaults.standard.set(encoded, forKey: "recordings")
+                        UserDefaults.standard.synchronize()
+                        
+                        // 立即更新 recordings 数组
+                        Task { @MainActor in
+                            self.recordings = recordings
+                        }
+                    }
                 }
             }
             
@@ -384,15 +405,37 @@ class AudioService: NSObject, ObservableObject {
         formattedDuration = String(format: "%02d:%02d", minutes, seconds)
     }
     
-    // 获取所有录音文件
+    // MARK: - 录音管理
     func getRecordings() -> [Recording] {
-        if let savedData = UserDefaults.standard.array(forKey: "recordings") as? [[String: Any]] {
-            return savedData.compactMap { Recording.fromDictionary($0) }
+        if let data = UserDefaults.standard.data(forKey: "recordings"),
+           let recordings = try? JSONDecoder().decode([Recording].self, from: data) {
+            return recordings
         }
         return []
     }
     
-    // 删除录音文件
+    func updateRecording(_ recording: Recording) {
+        var recordings = getRecordings()
+        if let index = recordings.firstIndex(where: { $0.id == recording.id }) {
+            recordings[index] = recording
+            if let encoded = try? JSONEncoder().encode(recordings) {
+                UserDefaults.standard.set(encoded, forKey: "recordings")
+                UserDefaults.standard.synchronize()
+                
+                // 立即更新 recordings 数组
+                Task { @MainActor in
+                    self.recordings = recordings
+                }
+            }
+        }
+    }
+    
+    func updateRecordingName(_ recording: Recording, newName: String) {
+        var updatedRecording = recording
+        updatedRecording.name = newName
+        updateRecording(updatedRecording)
+    }
+    
     func deleteRecording(_ recording: Recording) {
         do {
             // 删除音频文件
@@ -403,10 +446,15 @@ class AudioService: NSObject, ObservableObject {
             // 从 UserDefaults 中删除记录
             var recordings = getRecordings()
             recordings.removeAll { $0.id == recording.id }
-            UserDefaults.standard.set(recordings.map { $0.toDictionary() }, forKey: "recordings")
-            
-            // 强制同步 UserDefaults
-            UserDefaults.standard.synchronize()
+            if let encoded = try? JSONEncoder().encode(recordings) {
+                UserDefaults.standard.set(encoded, forKey: "recordings")
+                UserDefaults.standard.synchronize()
+                
+                // 立即更新 recordings 数组
+                Task { @MainActor in
+                    self.recordings = recordings
+                }
+            }
         } catch {
             print("删除录音文件失败: \(error)")
             errorMessage = error.localizedDescription

@@ -19,14 +19,22 @@ struct HistoryView: View {
         NavigationView {
             List {
                 ForEach(recordings) { recording in
-                    RecordingRow(recording: recording, audioService: audioService)
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
-                        .overlay(
-                            isEditing ? selectionOverlay(for: recording) : nil
-                        )
+                    RecordingRow(recording: Binding(
+                        get: { recording },
+                        set: { updatedRecording in
+                            if let index = recordings.firstIndex(where: { $0.id == recording.id }) {
+                                recordings[index] = updatedRecording
+                                audioService.updateRecording(updatedRecording)
+                            }
+                        }
+                    ), audioService: audioService)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .overlay(
+                        isEditing ? selectionOverlay(for: recording) : nil
+                    )
                 }
             }
             .listStyle(.plain)
@@ -79,10 +87,10 @@ struct HistoryView: View {
                 Text(errorMessage ?? "未知错误")
             }
             .onAppear {
-                recordings = audioService.getRecordings()
+                loadRecordings()
             }
             .refreshable {
-                recordings = audioService.getRecordings()
+                loadRecordings()
             }
         }
     }
@@ -118,9 +126,7 @@ struct HistoryView: View {
         }
         selectedRecordings.removeAll()
         isEditing = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            loadRecordings()
-        }
+        loadRecordings()
     }
     
     func playRecording(_ recording: Recording) {
