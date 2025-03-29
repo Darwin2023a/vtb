@@ -324,31 +324,24 @@ class AudioService: NSObject, ObservableObject {
         if let savedData = UserDefaults.standard.array(forKey: "recordings") as? [[String: Any]] {
             return savedData.compactMap { Recording.fromDictionary($0) }
         }
-        
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        do {
-            let files = try FileManager.default.contentsOfDirectory(at: documentsPath, includingPropertiesForKeys: nil)
-            return files.filter { $0.pathExtension == "wav" }
-                .map { url in
-                    Recording(
-                        audioURL: url,
-                        transcription: "",
-                        enhancedText: "",
-                        tags: [],
-                        createdAt: Date(timeIntervalSince1970: Double(url.deletingPathExtension().lastPathComponent) ?? Date().timeIntervalSince1970)
-                    )
-                }
-                .sorted { $0.createdAt > $1.createdAt }
-        } catch {
-            print("获取录音文件失败: \(error)")
-            return []
-        }
+        return []
     }
     
     // 删除录音文件
     func deleteRecording(_ recording: Recording) {
         do {
-            try FileManager.default.removeItem(at: recording.audioURL)
+            // 删除音频文件
+            if FileManager.default.fileExists(atPath: recording.audioURL.path) {
+                try FileManager.default.removeItem(at: recording.audioURL)
+            }
+            
+            // 从 UserDefaults 中删除记录
+            var recordings = getRecordings()
+            recordings.removeAll { $0.id == recording.id }
+            UserDefaults.standard.set(recordings.map { $0.toDictionary() }, forKey: "recordings")
+            
+            // 强制同步 UserDefaults
+            UserDefaults.standard.synchronize()
         } catch {
             print("删除录音文件失败: \(error)")
             errorMessage = error.localizedDescription
