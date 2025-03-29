@@ -227,7 +227,13 @@ class AudioService: NSObject, ObservableObject {
             }
             
             // 转写完成后自动进行文字润色
-            await enhanceText()
+            do {
+                _ = try await enhanceText()
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                }
+            }
         } catch {
             await MainActor.run {
                 self.errorMessage = error.localizedDescription
@@ -236,21 +242,20 @@ class AudioService: NSObject, ObservableObject {
         }
     }
     
-    private func enhanceText() async {
-        guard !transcription.isEmpty else { return }
+    func enhanceText(model: TextEnhancementService.Model = .qwen) async throws -> String {
+        guard !transcription.isEmpty else { return "" }
         
-        await MainActor.run {
-            isEnhancing = true
-        }
+        isEnhancing = true
+        errorMessage = nil
         
         do {
-            let result = try await textEnhancementService.enhanceText(transcription)
+            let result = try await textEnhancementService.enhanceText(transcription, model: model)
             
             // 解析返回的结果
             let components = result.components(separatedBy: "\n\n")
             let enhancedTextResult = components.first { $0.starts(with: "优化后的文本：") }?
                 .replacingOccurrences(of: "优化后的文本：", with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? result
             
             let tagsResult = components.first { $0.starts(with: "相关标签：") }?
                 .replacingOccurrences(of: "相关标签：", with: "")
@@ -274,11 +279,14 @@ class AudioService: NSObject, ObservableObject {
                     UserDefaults.standard.set(recordings.map { $0.toDictionary() }, forKey: "recordings")
                 }
             }
+            
+            return enhancedTextResult
         } catch {
             await MainActor.run {
-                errorMessage = error.localizedDescription
+                self.errorMessage = error.localizedDescription
                 isEnhancing = false
             }
+            throw error
         }
     }
     

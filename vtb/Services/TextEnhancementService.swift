@@ -24,11 +24,28 @@ class TextEnhancementService {
     private let apiKey: String
     private let baseURL = "https://api.siliconflow.cn/v1/chat/completions"
     
+    // 支持的模型列表
+    enum Model: String, CaseIterable {
+        case qwen = "Qwen/QwQ-32B"
+        case deepseek = "deepseek-ai/DeepSeek-R1"
+        case glm = "THUDM/glm-4-9b-chat"
+        case internlm = "internlm/internlm2_5-7b-chat"
+        
+        var displayName: String {
+            switch self {
+            case .qwen: return "通义千问"
+            case .deepseek: return "DeepSeek"
+            case .glm: return "GLM"
+            case .internlm: return "InternLM"
+            }
+        }
+    }
+    
     init(apiKey: String) {
         self.apiKey = apiKey
     }
     
-    func enhanceText(_ text: String) async throws -> String {
+    func enhanceText(_ text: String, model: Model = .qwen) async throws -> String {
         let prompt = """
         请对以下文本进行润色和优化，使其更加流畅自然，同时保持原意不变。同时，请为这段文本生成三个相关的标签（hashtag）。
         
@@ -44,7 +61,7 @@ class TextEnhancementService {
         """
         
         let request = ChatRequest(
-            model: "Qwen/QwQ-32B",
+            model: model.rawValue,
             messages: [
                 Message(role: "user", content: prompt)
             ],

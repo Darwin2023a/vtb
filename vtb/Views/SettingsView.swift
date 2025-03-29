@@ -4,13 +4,33 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("language") private var language = "zh-CN"
     @AppStorage("autoTranscribe") private var autoTranscribe = true
+    @AppStorage("siliconflow_api_key") private var siliconflowApiKey = ""
+    @AppStorage("flomo_api_key") private var flomoApiKey = ""
+    @AppStorage("flomo_api_url") private var flomoApiUrl = "https://flomoapp.com/iwh/MjI1MzMxNA/b837df1dfa9334ff7869a5f8745021db/"
     
     var body: some View {
         NavigationView {
             List {
                 Section(header: Text("API 设置")) {
-                    NavigationLink(destination: APISettingsView()) {
-                        Label("API Key 设置", systemImage: "key.fill")
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("文本转写和润色 API Key")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        SecureField("输入 SiliconFlow API Key", text: $siliconflowApiKey)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Flomo API Key")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        SecureField("输入 Flomo API Key", text: $flomoApiKey)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Flomo API URL")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        TextField("输入 Flomo API URL", text: $flomoApiUrl)
                     }
                 }
                 
