@@ -3,12 +3,16 @@ import AVFoundation
 
 struct RecordingRow: View {
     let recording: Recording
-    let audioService: AudioService
+    @ObservedObject var audioService: AudioService
     @State private var isExpanded = false
     @State private var isSending = false
     @State private var showingError = false
     @State private var errorMessage: String?
     @State private var showingSuccess = false
+    
+    private var isPlayingThisRecording: Bool {
+        audioService.isPlaying && audioService.currentPlayingURL == recording.audioURL
+    }
     
     private var flomoService: FlomoService {
         FlomoService()
@@ -27,16 +31,6 @@ struct RecordingRow: View {
                 }
                 
                 Spacer()
-                
-                // 播放按钮
-                Button(action: {
-                    audioService.playRecording(url: recording.audioURL)
-                }) {
-                    Image(systemName: audioService.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .resizable()
-                        .frame(width: 44, height: 44)
-                        .foregroundColor(.blue)
-                }
             }
             
             // 展开/收起按钮
@@ -52,10 +46,48 @@ struct RecordingRow: View {
                         .foregroundColor(.blue)
                 }
             }
+            .buttonStyle(PlainButtonStyle())
             
             // 展开后的详细信息
             if isExpanded {
                 VStack(alignment: .leading, spacing: 16) {
+                    // 播放控制按钮
+                    HStack(spacing: 12) {
+                        // 播放/暂停按钮
+                        Button(action: {
+                            audioService.togglePlayback(url: recording.audioURL)
+                        }) {
+                            HStack {
+                                Image(systemName: isPlayingThisRecording ? "pause.circle.fill" : "play.circle.fill")
+                                    .font(.title)
+                                Text(isPlayingThisRecording ? "暂停" : "播放")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        
+                        // 停止按钮
+                        Button(action: {
+                            audioService.stopPlayback()
+                        }) {
+                            HStack {
+                                Image(systemName: "stop.circle.fill")
+                                    .font(.title)
+                                Text("停止")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.red)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    
                     if !recording.transcription.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("转写文本：")
@@ -86,6 +118,7 @@ struct RecordingRow: View {
                                 .cornerRadius(8)
                             }
                             .disabled(isSending)
+                            .buttonStyle(PlainButtonStyle())
                         }
                     }
                     
@@ -119,6 +152,7 @@ struct RecordingRow: View {
                                 .cornerRadius(8)
                             }
                             .disabled(isSending)
+                            .buttonStyle(PlainButtonStyle())
                         }
                     }
                     
@@ -160,6 +194,7 @@ struct RecordingRow: View {
                         .cornerRadius(8)
                     }
                     .disabled(isSending)
+                    .buttonStyle(PlainButtonStyle())
                 }
                 .padding(.top, 8)
             }
